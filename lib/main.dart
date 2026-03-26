@@ -28,8 +28,10 @@ class NewsScreen extends StatefulWidget {
 }
 
 class _NewsScreenState extends State<NewsScreen> {
+  
   List articles = [];
   bool loading = true;
+  final String apiKey = "6a3acace9ba646ea9168782fd98a8f89";
 
   Future fetchRSS(String url, String tag) async {
     final res = await http.get(Uri.parse(url));
@@ -47,38 +49,92 @@ class _NewsScreenState extends State<NewsScreen> {
     }).toList();
   }
 
-  Future fetchNews() async {
-    try {
-      final wb = await fetchRSS(
-          "https://news.google.com/rss/search?q=West+Bengal+OR+Kolkata",
-          "📍 WB");
+Future fetchNews() async {
+  try {
+    List combined = [];
 
-      final india = await fetchRSS(
-          "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en",
-          "🇮🇳 India");
+    // 🔥 1. NewsAPI (Primary)
+    final newsApiUrl =
+        "https://newsapi.org/v2/top-headlines?country=in&pageSize=50&apiKey=$apiKey";
 
-      final world = await fetchRSS(
-          "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
-          "🌍 World");
+    final res1 = await http.get(Uri.parse(newsApiUrl));
+    final data1 = jsonDecode(res1.body);
 
-      List combined = [...wb, ...india, ...world];
+    List apiNews = data1["articles"] ?? [];
 
-      // Remove duplicates
-      final unique = {
-        for (var a in combined) a["title"]: a
-      }.values.toList();
-
-      setState(() {
-        articles = unique;
-        loading = false;
-      });
-    } catch (e) {
-      print(e);
-      setState(() {
-        loading = false;
+    for (var a in apiNews) {
+      combined.add({
+        "title": a["title"],
+        "desc": a["description"],
+        "time": a["publishedAt"]
       });
     }
+
+    // 🔥 2. Google RSS (Fallback)
+    try {
+      final rssUrl =
+          "https://news.google.com/rss/search?q=India";
+
+      final res2 = await http.get(
+        Uri.parse(rssUrl),
+        headers: {
+          "User-Agent": "Mozilla/5.0"
+        },
+      );
+
+      final xml = XmlDocument.parse(res2.body);
+
+      final items = xml.findAllElements("item");
+
+      for (var item in items.take(20)) {
+        combined.add({
+          "title": item.findElements("title").first.text,
+          "desc": item.findElements("description").first.text,
+          "time": item.findElements("pubDate").first.text,
+        });
+      }
+    } catch (e) {
+      print("RSS failed, ignoring...");
+    }
+
+    // 🔥 Remove duplicates
+    final unique = {
+      for (var a in combined) a["title"]: a
+    }.values.toList();
+
+    // 🔥 Categorize
+    List wb = [];
+    List india = [];
+    List world = [];
+
+    for (var a in unique) {
+      final text =
+          ((a["title"] ?? "") + (a["desc"] ?? "")).toLowerCase();
+
+      if (text.contains("kolkata") ||
+          text.contains("west bengal") ||
+          text.contains("bengal")) {
+        wb.add({...a, "tag": "📍 WB"});
+      } else if (text.contains("india")) {
+        india.add({...a, "tag": "🇮🇳 India"});
+      } else {
+        world.add({...a, "tag": "🌍 World"});
+      }
+    }
+
+    List finalList = [...wb, ...india, ...world];
+
+    setState(() {
+      articles = finalList;
+      loading = false;
+    });
+  } catch (e) {
+    print("ERROR: $e");
+    setState(() {
+      loading = false;
+    });
   }
+}
 
   String cleanSummary(String text) {
     text = text.replaceAll(RegExp(r"<[^>]*>"), "");
