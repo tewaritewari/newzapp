@@ -37,11 +37,24 @@ class _NewsScreenState extends State<NewsScreen> {
 
       final res = await http.get(
         Uri.parse(url),
-        headers: {"User-Agent": "Mozilla/5.0"},
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "application/rss+xml",
+        },
       );
+
+      print("STATUS: ${res.statusCode}");
+
+      if (res.statusCode != 200 || res.body.isEmpty) {
+        throw Exception("Failed to load RSS");
+      }
 
       final xml = XmlDocument.parse(res.body);
       final items = xml.findAllElements("item");
+
+      if (items.isEmpty) {
+        throw Exception("No news items");
+      }
 
       List all = items.map((item) {
         return {
@@ -78,7 +91,16 @@ class _NewsScreenState extends State<NewsScreen> {
       });
     } catch (e) {
       print("ERROR: $e");
+
+      // Fallback so app never looks empty
       setState(() {
+        articles = [
+          {
+            "title": "Unable to load news",
+            "desc": "Check internet connection or try again later.",
+            "tag": "⚠️"
+          }
+        ];
         loading = false;
       });
     }
@@ -104,47 +126,43 @@ class _NewsScreenState extends State<NewsScreen> {
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : articles.isEmpty
-              ? const Center(child: Text("No news available"))
-              : ListView.builder(
-                  itemCount: articles.length,
-                  itemBuilder: (context, index) {
-                    final a = articles[index];
+          : ListView.builder(
+              itemCount: articles.length,
+              itemBuilder: (context, index) {
+                final a = articles[index];
 
-                    return Container(
-                      padding: const EdgeInsets.all(15),
-                      margin: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[900],
-                        borderRadius: BorderRadius.circular(12),
+                return Container(
+                  padding: const EdgeInsets.all(15),
+                  margin: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[900],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        a["tag"] ?? "🌍",
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.blue),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            a["tag"] ?? "🌍",
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.blue),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            a["title"] ?? "",
-                            style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            cleanSummary(a["desc"] ?? ""),
-                            style:
-                                const TextStyle(color: Colors.grey),
-                          ),
-                        ],
+                      const SizedBox(height: 5),
+                      Text(
+                        a["title"] ?? "",
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                    );
-                  },
-                ),
+                      const SizedBox(height: 8),
+                      Text(
+                        cleanSummary(a["desc"] ?? ""),
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }
